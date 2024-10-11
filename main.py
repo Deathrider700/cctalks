@@ -3,11 +3,10 @@ import telebot
 import os
 import json
 import logging
-from square.client import Client  # Square client
-from flask import Flask, request, jsonify, render_template  # Import Flask for the web server
+from flask import Flask, request, jsonify, render_template, Response
 
-# Configure logging
-logging.basicConfig(level=logging.INFO)
+# Configure logging to write to a file for displaying on the webpage
+logging.basicConfig(filename='bot_activity.log', level=logging.INFO, format='%(asctime)s %(message)s')
 
 # Load configuration from a JSON file
 def load_config():
@@ -93,22 +92,22 @@ async def scrape_and_process_payments():
     except Exception as e:
         logging.error(f"Error in scraping and processing payments: {e}")
 
-# Route for processing payments via API (if needed for frontend)
-@app.route('/process-payment', methods=['POST'])
-def payment_route():
-    data = request.get_json()
-    payment_nonce = data.get('nonce')
-    transaction_info = asyncio.run(process_payment(payment_nonce))
-    if transaction_info:
-        send_to_target_channel(transaction_info['id'])  # Send transaction info to Telegram
-        return jsonify({"status": "success", "transaction": transaction_info}), 200
-    else:
-        return jsonify({"status": "error"}), 400
-
-# Route to serve the index HTML page
+# Route to serve the bot activity logs as an HTML page
 @app.route('/')
 def index():
     return render_template('index.html')
+
+# Route to stream the log file to the front-end
+@app.route('/logs')
+def stream_logs():
+    def generate():
+        with open('bot_activity.log') as f:
+            while True:
+                line = f.readline()
+                if not line:
+                    break
+                yield line
+    return Response(generate(), mimetype='text/plain')
 
 # Start the scraping and processing
 if __name__ == '__main__':
