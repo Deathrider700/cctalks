@@ -3,6 +3,7 @@ import telebot
 import os
 import json
 import logging
+from square.client import Client  # Correct import for Square client
 from flask import Flask, request, jsonify, render_template, Response
 
 # Configure logging to write to a file for displaying on the webpage
@@ -33,7 +34,7 @@ API_TOKEN = "7785068082:AAEwD4mFUHLVLSeA5JrXZYnj8UKt52cFpHw"  # User's Telegram 
 bot = telebot.TeleBot(API_TOKEN)
 
 # Set the target Telegram channel (make sure to replace with your channel or group handle)
-target_channel = os.getenv('TARGET_CHANNEL', '@cctalks700')  # Set in Render's environment variables
+target_channel = os.getenv('TARGET_CHANNEL', '@your_channel_name')  # Set in Render's environment variables
 
 # Function to send confirmation to the target channel
 def send_to_target_channel(transaction_info):
