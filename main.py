@@ -4,7 +4,6 @@ import os
 import json
 import logging
 from square.client import Client  # Square client
-from square.exceptions import ApiException  # Corrected import for error handling
 from flask import Flask, request, jsonify, render_template  # Import Flask for the web server
 
 # Configure logging
@@ -65,7 +64,7 @@ async def process_payment(payment_nonce, amount=1):
             logging.warning(f"Payment failed: {result.errors}")
             return None
 
-    except ApiException as e:
+    except Exception as e:
         logging.error(f"Square API error: {e}")
         return None
 
