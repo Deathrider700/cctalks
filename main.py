@@ -4,7 +4,7 @@ import os
 import json
 import logging
 from square.client import Client  # Square client
-from square.error import ApiException  # For better error handling
+from square.exceptions import ApiException  # Corrected import for error handling
 from flask import Flask, request, jsonify, render_template  # Import Flask for the web server
 
 # Configure logging
@@ -23,19 +23,19 @@ config = load_config()
 
 # Setup Square Client
 square_client = Client(
-    access_token=config['square']['access_token'],  # Square API token from config file
-    environment='production'  # Use 'sandbox' for testing, 'production' for live transactions
+    access_token=config['square']['access_token'],  # Access token from Square dashboard
+    environment='production'  # Switch to 'production' for live transactions
 )
 
 # Initialize Flask app
 app = Flask(__name__)
 
-# Use the provided Telegram bot token directly
-API_TOKEN = "7785068082:AAEwD4mFUHLVLSeA5JrXZYnj8UKt52cFpHw"  # Hardcoded token for the bot
+# Hardcoded Telegram Bot Token
+API_TOKEN = "7785068082:AAEwD4mFUHLVLSeA5JrXZYnj8UKt52cFpHw"  # User's Telegram bot token
 bot = telebot.TeleBot(API_TOKEN)
 
-# User input for target channel, set as an environment variable in Render
-target_channel = os.getenv('TARGET_CHANNEL')  # Use Render environment variable for the channel
+# Set the target Telegram channel (make sure to replace with your channel or group handle)
+target_channel = os.getenv('TARGET_CHANNEL', '@your_channel_name')  # Set in Render's environment variables
 
 # Function to send confirmation to the target channel
 def send_to_target_channel(transaction_info):
@@ -89,4 +89,4 @@ def index():
 # Start the Flask app and Telegram bot
 if __name__ == '__main__':
     logging.info("Bot is running...")
-    app.run(host='0.0.0.0', port=int(os.environ.get('PORT', 5000)))  # Render uses $PORT
+    app.run(host='0.0.0.0', port=int(os.environ.get('PORT', 5000)))  # Render uses the $PORT environment variable
