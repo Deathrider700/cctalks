@@ -3,54 +3,27 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Square Payment Form</title>
-    <script type="text/javascript" src="https://sandbox.web.squarecdn.com/v1/square.js"></script>
+    <title>Bot Activity Logs</title>
 </head>
 <body>
-    <div id="payment-form"></div>
-    <button id="card-button" type="button">Pay $0.01</button>
+    <h1>Bot Activity</h1>
+    <div id="log-container" style="border: 1px solid #ccc; padding: 10px; height: 500px; overflow-y: scroll;">
+        <pre id="log-content"></pre>
+    </div>
 
     <script>
-        const appId = 'YOUR_SQUARE_APP_ID';  // Replace with your Square App ID
-        const locationId = 'YOUR_LOCATION_ID';  // Replace with your Location ID
-
-        async function initializeCard(paymentForm) {
-            const card = await paymentForm.card();
-            await card.attach('#payment-form');
-            return card;
+        function fetchLogs() {
+            const logContainer = document.getElementById("log-content");
+            fetch('/logs')
+                .then(response => response.text())
+                .then(data => {
+                    logContainer.textContent = data;
+                });
         }
 
-        async function createPayment(card) {
-            try {
-                const tokenResult = await card.tokenize();
-                if (tokenResult.status === 'OK') {
-                    const paymentNonce = tokenResult.token;
-
-                    // Send this nonce to the backend via an API call
-                    const response = await fetch('/process-payment', {
-                        method: 'POST',
-                        headers: { 'Content-Type': 'application/json' },
-                        body: JSON.stringify({ nonce: paymentNonce })
-                    });
-
-                    if (response.ok) {
-                        alert("Payment successful!");
-                    } else {
-                        throw new Error('Payment processing failed');
-                    }
-                } else {
-                    throw new Error(tokenResult.errors);
-                }
-            } catch (error) {
-                console.error("Tokenization or payment error:", error);
-            }
-        }
-
-        document.getElementById('card-button').addEventListener('click', async function () {
-            const paymentForm = new window.Square.payment(appId, locationId);
-            const card = await initializeCard(paymentForm);
-            await createPayment(card);
-        });
+        // Fetch logs every 5 seconds
+        setInterval(fetchLogs, 5000);
+        fetchLogs();  // Fetch immediately when the page loads
     </script>
 </body>
 </html>
