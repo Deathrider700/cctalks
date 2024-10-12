@@ -1,5 +1,7 @@
 {
     "square": {
-        "access_token": "EAAAlysBwB7VL6j9Hn-CLBk4F10_Ri5tTWgkAU2mMAPsQbxfOxLQLWICJ912jydh"
+        "access_token": "EAAAlysBwB7VL6j9Hn-CLBk4F10_Ri5tTWgkAU2mMAPsQbxfOxLQLWICJ912jydh",  // Your test account access token
+        "application_id": "sandbox-sq0idb-CliA8EoPIX8LBNRqNFyE0Q",  // Your Application ID
+        "application_secret": "sandbox-sq0csb-_AO_biyimdQey1Cn5FGmJnTUFC-PTQOUfmyhizXmstA"  // Your Application Secret
     }
 }
