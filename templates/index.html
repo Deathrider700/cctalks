@@ -3,27 +3,51 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Bot Activity Logs</title>
+    <title>Square Payment Form</title>
+    <script type="text/javascript" src="https://sandbox.web.squarecdn.com/v1/square.js"></script>
 </head>
 <body>
-    <h1>Bot Activity</h1>
-    <div id="log-container" style="border: 1px solid #ccc; padding: 10px; height: 500px; overflow-y: scroll;">
-        <pre id="log-content"></pre>
-    </div>
+    <h1>Payment Processing</h1>
+    <div id="payment-form"></div> <!-- Square Payment Form goes here -->
+    <button id="pay-button" style="display:none;">Process Payment</button> <!-- Button to trigger payment hidden -->
 
     <script>
-        function fetchLogs() {
-            const logContainer = document.getElementById("log-content");
-            fetch('/logs')
-                .then(response => response.text())
-                .then(data => {
-                    logContainer.textContent = data;
-                });
+        const applicationId = 'sandbox-sq0idb-CliA8EoPIX8LBNRqNFyE0Q';  // Sandbox Application ID
+        const locationId = 'LHE2QW5JNT5H2';  // Your Location ID
+        let card;
+
+        // Initialize the card input
+        async function initializeCard(paymentForm) {
+            card = await paymentForm.card();
+            await card.attach('#payment-form');
         }
 
-        // Fetch logs every 5 seconds
-        setInterval(fetchLogs, 5000);
-        fetchLogs();  // Fetch immediately when the page loads
+        // Function to generate the nonce
+        async function getNonceFromCard() {
+            try {
+                const tokenResult = await card.tokenize();  // Generate the nonce
+                if (tokenResult.status === 'OK') {
+                    return tokenResult.token;  // Return the generated nonce
+                } else {
+                    throw new Error(tokenResult.errors);
+                }
+            } catch (error) {
+                console.error("Tokenization error:", error);
+                return null;
+            }
+        }
+
+        // Initialize the payment form on page load
+        document.addEventListener("DOMContentLoaded", async function () {
+            const paymentForm = new window.Square.payment(applicationId, locationId);  // Initialize Square payment form
+            await initializeCard(paymentForm);
+        });
+
+        // Function to allow backend script to call this function to get nonce
+        async function scrapeAndGetNonce() {
+            const nonce = await getNonceFromCard();
+            return nonce;  // Return nonce
+        }
     </script>
 </body>
 </html>
